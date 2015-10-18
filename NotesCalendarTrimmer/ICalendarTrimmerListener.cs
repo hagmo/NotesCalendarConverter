@@ -13,7 +13,7 @@ namespace NotesCalendarTrimmer
         private StringBuilder m_SB;
         private StringBuilder m_CalendarPreamble;
         private StringBuilder m_CurrentEvent;
-        private StringBuilder m_PreviousEvents;
+        private List<IcalEvent> m_Events;
 
         private List<Tuple<DateTime, DateTime>> m_RDates;
         private string m_CurrentDTSTARTPrefix;
@@ -26,14 +26,21 @@ namespace NotesCalendarTrimmer
             m_CalendarPreamble = new StringBuilder();
             m_RDates = new List<Tuple<DateTime, DateTime>>();
             m_CurrentEvent = new StringBuilder();
-            m_PreviousEvents = new StringBuilder();
+            m_Events = new List<IcalEvent>();
         }
 
         public override void ExitIcalstream(ICalendarParser.IcalstreamContext context)
         {
             m_SB.AppendLine("BEGIN:VCALENDAR");
             m_SB.Append(m_CalendarPreamble.ToString());
-            m_SB.Append(m_PreviousEvents.ToString());
+            m_Events.Sort(delegate(IcalEvent x, IcalEvent y)
+            {
+                return x.StartTime.CompareTo(y.StartTime);
+            });
+            foreach (var vevent in m_Events)
+            {
+                m_SB.Append(vevent.Text);
+            }
             m_SB.AppendLine("END:VCALENDAR");
         }
 
@@ -62,9 +69,13 @@ namespace NotesCalendarTrimmer
         }
 
         /// <summary>
-        /// If there are any saved rdates, write a copy of the entire event, for each repeated date.
-        /// It seems that Google Calendar does not handle the RDATE property properly.
+        /// Write a copy of the entire event for each repeated date.
         /// </summary>
+        /// <remarks>
+        /// It seems that neither Google Calendar nor Lotus Notes handle the RDATE property properly.
+        /// We need to turn all events that contain the RDATE property into several copies of the same
+        /// event with different start and end times.
+        /// </remarks>
         /// <param name="context"></param>
         public override void ExitEventc(ICalendarParser.EventcContext context)
         {
@@ -93,7 +104,11 @@ namespace NotesCalendarTrimmer
                 sb.AppendLine();
 
                 sb.AppendLine(post);
-                m_PreviousEvents.Append(sb.ToString());
+                m_Events.Add(new IcalEvent()
+                    {
+                        StartTime = dates.Item1,
+                        Text = sb.ToString()
+                    });
             }
         }
 
@@ -198,6 +213,12 @@ namespace NotesCalendarTrimmer
             if (dateTime.EndsWith("Z"))
                 dateTime = dateTime.Remove(dateTime.Length - 1);
             return DateTime.ParseExact(dateTime, dateTimeFormat, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private class IcalEvent
+        {
+            public DateTime StartTime { get; set; }
+            public string Text { get; set; }
         }
     }
 }
